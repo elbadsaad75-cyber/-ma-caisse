@@ -1,0 +1,16 @@
+MA CAISSE - INSTALLATION iPHONE
+
+Important :
+Une PWA iPhone doit être ouverte depuis une adresse HTTPS pour être installée correctement.
+Une fois installée et mise en cache, l'application peut fonctionner hors connexion.
+
+Étapes :
+1. Mettre ce dossier sur un hébergement HTTPS.
+2. Ouvrir l'adresse dans Safari sur l'iPhone.
+3. Appuyer sur Partager.
+4. Choisir « Sur l'écran d'accueil ».
+5. Appuyer sur « Ajouter ».
+6. Ouvrir « Ma Caisse » depuis l'écran d'accueil.
+
+Les données de l'application sont stockées localement sur l'iPhone.
+Utiliser Exporter dans l'application pour faire des sauvegardes régulières.

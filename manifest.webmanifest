@@ -1,0 +1,25 @@
+{
+  "name": "Ma Caisse - Clients & Crédits",
+  "short_name": "Ma Caisse",
+  "description": "Gestion des clients, crédits et paiements hors connexion.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f9",
+  "theme_color": "#1769aa",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
