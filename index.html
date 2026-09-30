@@ -3,12 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#1769aa">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.svg">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Ma Caisse">
 <title>Ma Caisse - Clients & Crédits</title>
 <style>
 :root{--p:#1769aa;--bg:#f3f6f9;--card:#fff;--text:#17202a;--muted:#6b7280;--green:#18864b;--red:#c62828;--orange:#b76e00}
@@ -27,7 +21,7 @@ button.light{background:#eef3f7;color:#263238}
 .tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e7eb}th{background:#f7f9fb}
 .badge{display:inline-block;padding:4px 8px;border-radius:20px;font-size:12px;font-weight:bold}.ok{background:#e5f6ed;color:var(--green)}.due{background:#fff2e0;color:var(--orange)}
 .actions{display:flex;gap:5px;flex-wrap:wrap}.actions button{padding:7px 9px;font-size:12px}
-.hidden{display:none}.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:15px;z-index:10}.modalbox{background:white;border-radius:14px;max-width:500px;width:100%;padding:18px}.modalbox h2{margin-top:0}
+.hidden{display:none!important}.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:15px;z-index:10}.modalbox{background:white;border-radius:14px;max-width:500px;width:100%;padding:18px}.modalbox h2{margin-top:0}
 .notice{padding:10px;background:#eef7ff;border-radius:9px;margin-bottom:12px;font-size:13px}
 footer{text-align:center;color:#777;padding:12px;font-size:12px}
 @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}header h1{font-size:18px}main{padding:10px}}
@@ -162,9 +156,5 @@ function importer(e){
 }
 afficher();
 </script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-}
-</script></body>
+</body>
 </html>
