@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ma Caisse - Clients & Crédits</title>
+<style>
+:root{--p:#1769aa;--bg:#f3f6f9;--card:#fff;--text:#17202a;--muted:#6b7280;--green:#18864b;--red:#c62828;--orange:#b76e00}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{background:var(--p);color:#fff;padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{margin:0;font-size:22px}header span{font-size:13px;opacity:.9}
+main{max-width:1150px;margin:auto;padding:16px}
+.card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #00000012}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+input,select,button{font:inherit;padding:11px;border-radius:9px;border:1px solid #d2d7dc}
+button{border:0;background:var(--p);color:#fff;cursor:pointer;font-weight:600}
+button.secondary{background:#607d8b}button.green{background:var(--green)}button.red{background:var(--red)}button.orange{background:var(--orange)}
+button.light{background:#eef3f7;color:#263238}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{padding:14px;border-radius:12px;background:#f7f9fb}.stat b{display:block;font-size:22px;margin-top:6px}.muted{color:var(--muted);font-size:13px}
+.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:left;padding:11px;border-bottom:1px solid #e5e7eb}th{background:#f7f9fb}
+.badge{display:inline-block;padding:4px 8px;border-radius:20px;font-size:12px;font-weight:bold}.ok{background:#e5f6ed;color:var(--green)}.due{background:#fff2e0;color:var(--orange)}
+.actions{display:flex;gap:5px;flex-wrap:wrap}.actions button{padding:7px 9px;font-size:12px}
+.hidden{display:none!important}.modal{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:15px;z-index:10}.modalbox{background:white;border-radius:14px;max-width:500px;width:100%;padding:18px}.modalbox h2{margin-top:0}
+.notice{padding:10px;background:#eef7ff;border-radius:9px;margin-bottom:12px;font-size:13px}
+footer{text-align:center;color:#777;padding:12px;font-size:12px}
+@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}header h1{font-size:18px}main{padding:10px}}
+@media print{body{background:#fff}.no-print{display:none!important}.receipt{display:block!important}}
+.receipt{background:#fff;max-width:380px;margin:auto;padding:20px;font-family:Arial}.receipt h2{text-align:center;margin:0 0 5px}.receipt hr{border:0;border-top:1px dashed #888}.receipt .line{display:flex;justify-content:space-between;margin:8px 0}
+</style>
+</head>
+<body>
+<header class="no-print">
+<div><h1>Ma Caisse — Clients & Crédits</h1><span>Gestion simple des dettes et paiements</span></div>
+<div class="actions">
+<button class="light" onclick="exporter()">Exporter</button>
+<button class="light" onclick="document.getElementById('importFile').click()">Importer</button>
+<input id="importFile" type="file" accept=".json" class="hidden" onchange="importer(event)">
+</div>
+</header>
+
+<div id="appArea">
+<main>
+<div class="card no-print">
+<div class="stats">
+<div class="stat">Clients<b id="sClients">0</b></div>
+<div class="stat">Crédit total<b id="sCredit">0 DH</b></div>
+<div class="stat">Total payé<b id="sPaye">0 DH</b></div>
+<div class="stat">Reste à payer<b id="sReste">0 DH</b></div>
+</div>
+</div>
+
+<div class="card no-print">
+<h2>Ajouter un client</h2>
+<div class="grid">
+<input id="nom" placeholder="Nom du client *">
+<input id="tel" placeholder="Téléphone">
+<input id="adresse" placeholder="Adresse">
+<input id="credit" type="number" min="0" step="0.01" placeholder="Crédit initial (DH)">
+<button class="green" onclick="ajouterClient()">+ Ajouter</button>
+</div>
+</div>
+
+<div class="card no-print">
+<div class="grid">
+<input id="recherche" placeholder="🔎 Rechercher un client..." oninput="afficher()">
+<select id="filtre" onchange="afficher()"><option value="tous">Tous les clients</option><option value="reste">Avec reste à payer</option><option value="solde">Soldés</option></select>
+</div>
+</div>
+
+<div class="card">
+<h2>Liste des clients</h2>
+<div class="tablewrap">
+<table><thead><tr><th>Client</th><th>Crédit</th><th>Payé</th><th>Reste</th><th class="no-print">Action</th></tr></thead>
+<tbody id="liste"></tbody></table>
+</div>
+</div>
+<footer class="no-print">Version ancien modèle — préparation de la synchronisation Supabase. Ne supprime pas les anciennes données.</footer>
+</main>
+</div>
+
+<div id="modal" class="modal hidden no-print"><div class="modalbox" id="modalContent"></div></div>
+<div id="printArea" class="hidden"></div>
+
+<script>
+const KEY="ma_caisse_vfinal_1";
+let clients=JSON.parse(localStorage.getItem(KEY)||"[]");
+
+function save(){localStorage.setItem(KEY,JSON.stringify(clients));}
+function money(n){return Number(n||0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" DH"}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function reste(c){return Math.max(0,Number(c.credit)-Number(c.paye))}
+function closeModal(){document.getElementById("modal").classList.add("hidden")}
+function openModal(html){document.getElementById("modalContent").innerHTML=html;document.getElementById("modal").classList.remove("hidden")}
+function ajouterClient(){
+ let nom=document.getElementById("nom").value.trim(),tel=document.getElementById("tel").value.trim(),adresse=document.getElementById("adresse").value.trim(),credit=Number(document.getElementById("credit").value||0);
+ if(!nom){alert("Le nom du client est obligatoire.");return}
+ clients.push({id:Date.now(),nom,tel,adresse,credit,paye:0,paiements:[]});save();
+ ["nom","tel","adresse","credit"].forEach(x=>document.getElementById(x).value="");afficher();
+}
+function afficher(){
+ let q=document.getElementById("recherche").value.toLowerCase(),f=document.getElementById("filtre").value;
+ let rows=clients.filter(c=>(c.nom+" "+c.tel+" "+c.adresse).toLowerCase().includes(q)).filter(c=>f==="tous"||(f==="reste"&&reste(c)>0)||(f==="solde"&&reste(c)===0));
+ document.getElementById("liste").innerHTML=rows.length?rows.map(c=>{
+ let r=reste(c), status=r===0?'<span class="badge ok">Soldé</span>':'<span class="badge due">À payer</span>';
+ return `<tr><td><b>${esc(c.nom)}</b><br><span class="muted">${esc(c.tel)}${c.adresse?" • "+esc(c.adresse):""}</span></td>
+ <td>${money(c.credit)}</td><td>${money(c.paye)}</td><td><b>${money(r)}</b><br>${status}</td>
+ <td class="no-print"><div class="actions"><button class="green" onclick="paiement(${c.id})">+ Paiement</button><button class="orange" onclick="creditPlus(${c.id})">+ Crédit</button><button class="secondary" onclick="historique(${c.id})">Historique</button><button class="light" onclick="modifier(${c.id})">Modifier</button><button class="orange" onclick="recu(${c.id})">Reçu</button><button class="red" onclick="supprimer(${c.id})">Supprimer</button></div></td></tr>`
+ }).join(""):'<tr><td colspan="5">Aucun client trouvé.</td></tr>';
+ let tc=clients.reduce((a,c)=>a+Number(c.credit),0),tp=clients.reduce((a,c)=>a+Number(c.paye),0);
+ document.getElementById("sClients").textContent=clients.length;document.getElementById("sCredit").textContent=money(tc);document.getElementById("sPaye").textContent=money(tp);document.getElementById("sReste").textContent=money(tc-tp);
+}
+function creditPlus(id){
+ let c=clients.find(x=>x.id===id);if(!c)return;
+ openModal(`<h2>Ajouter un crédit</h2><p><b>${esc(c.nom)}</b> — crédit actuel : <b>${money(c.credit)}</b></p>
+ <input id="creditPlusMontant" type="number" min="0.01" step="0.01" placeholder="Montant du crédit (DH)" style="width:100%;margin-bottom:10px">
+ <input id="creditPlusNote" placeholder="Note (facultatif)" style="width:100%;margin-bottom:10px">
+ <div class="actions"><button class="orange" onclick="confirmerCreditPlus(${id})">Ajouter le crédit</button><button class="secondary" onclick="closeModal()">Annuler</button></div>`);
+}
+function confirmerCreditPlus(id){
+ let c=clients.find(x=>x.id===id),m=Number(document.getElementById("creditPlusMontant").value||0),note=document.getElementById("creditPlusNote").value.trim();
+ if(m<=0){alert("Montant invalide.");return}
+ c.credit=Number(c.credit||0)+m;
+ if(!Array.isArray(c.credits))c.credits=[];
+ c.credits.push({id:Date.now(),date:new Date().toLocaleString("fr-FR"),montant:m,note});
+ save();closeModal();afficher();
+}
+function paiement(id){
+ let c=clients.find(x=>x.id===id);if(!c)return;
+ openModal(`<h2>Enregistrer un paiement</h2><p><b>${esc(c.nom)}</b> — reste : <b>${money(reste(c))}</b></p>
+ <input id="payMontant" type="number" min="0.01" step="0.01" placeholder="Montant payé (DH)" style="width:100%;margin-bottom:10px">
+ <input id="payNote" placeholder="Note (facultatif)" style="width:100%;margin-bottom:10px">
+ <div class="actions"><button class="green" onclick="confirmerPaiement(${id})">Enregistrer</button><button class="secondary" onclick="closeModal()">Annuler</button></div>`);
+}
+function confirmerPaiement(id){
+ let c=clients.find(x=>x.id===id),m=Number(document.getElementById("payMontant").value||0),note=document.getElementById("payNote").value.trim();
+ if(m<=0){alert("Montant invalide.");return}if(m>reste(c)){alert("Le paiement dépasse le reste à payer.");return}
+ c.paye+=m;c.paiements.push({id:Date.now(),date:new Date().toLocaleString("fr-FR"),montant:m,note});save();closeModal();afficher();
+}
+function historique(id){
+ let c=clients.find(x=>x.id===id);let h=c.paiements.length?c.paiements.slice().reverse().map((p,i)=>`<div class="card" style="margin:8px 0;padding:10px"><b>${money(p.montant)}</b> — ${esc(p.date)}${p.note?"<br><span class='muted'>"+esc(p.note)+"</span>":""}<br><button class="red" style="margin-top:6px" onclick="annulerPaiement(${id},${p.id})">Annuler ce paiement</button></div>`).join(""):"<p>Aucun paiement enregistré.</p>";
+ openModal(`<h2>Historique — ${esc(c.nom)}</h2><p>Crédit : ${money(c.credit)} • Payé : ${money(c.paye)} • Reste : ${money(reste(c))}</p>${h}<button class="secondary" onclick="closeModal()">Fermer</button>`);
+}
+function annulerPaiement(cid,pid){
+ let c=clients.find(x=>x.id===cid),p=c.paiements.find(x=>x.id===pid);if(!p)return;
+ if(confirm("Annuler ce paiement de "+money(p.montant)+" ?")){c.paye-=p.montant;c.paiements=c.paiements.filter(x=>x.id!==pid);save();closeModal();afficher();}
+}
+function modifier(id){
+ let c=clients.find(x=>x.id===id);
+ openModal(`<h2>Modifier le client</h2><input id="mNom" value="${esc(c.nom)}" placeholder="Nom" style="width:100%;margin-bottom:8px"><input id="mTel" value="${esc(c.tel)}" placeholder="Téléphone" style="width:100%;margin-bottom:8px"><input id="mAdr" value="${esc(c.adresse)}" placeholder="Adresse" style="width:100%;margin-bottom:8px"><input id="mCredit" type="number" value="${c.credit}" min="${c.paye}" step="0.01" style="width:100%;margin-bottom:10px"><div class="notice">Le crédit ne peut pas être inférieur au total déjà payé (${money(c.paye)}).</div><div class="actions"><button onclick="confirmerModification(${id})">Enregistrer</button><button class="secondary" onclick="closeModal()">Annuler</button></div>`);
+}
+function confirmerModification(id){
+ let c=clients.find(x=>x.id===id),credit=Number(document.getElementById("mCredit").value||0);
+ if(credit<c.paye){alert("Le crédit ne peut pas être inférieur au montant déjà payé.");return}
+ c.nom=document.getElementById("mNom").value.trim();c.tel=document.getElementById("mTel").value.trim();c.adresse=document.getElementById("mAdr").value.trim();c.credit=credit;
+ if(!c.nom){alert("Le nom est obligatoire.");return}save();closeModal();afficher();
+}
+function supprimer(id){let c=clients.find(x=>x.id===id);if(confirm("Supprimer définitivement "+c.nom+" et son historique ?")){clients=clients.filter(x=>x.id!==id);save();afficher();}}
+function recu(id){
+ let c=clients.find(x=>x.id===id),last=c.paiements[c.paiements.length-1];
+ if(!last){alert("Aucun paiement à imprimer.");return}
+ document.getElementById("printArea").innerHTML=`<div class="receipt"><h2>REÇU DE PAIEMENT</h2><div style="text-align:center">${new Date().toLocaleDateString("fr-FR")}</div><hr>
+ <div class="line"><span>Client</span><b>${esc(c.nom)}</b></div><div class="line"><span>Téléphone</span><span>${esc(c.tel||"-")}</span></div><hr>
+ <div class="line"><span>Paiement</span><b>${money(last.montant)}</b></div><div class="line"><span>Crédit initial</span><span>${money(c.credit)}</span></div><div class="line"><span>Total payé</span><span>${money(c.paye)}</span></div><div class="line"><span>Reste</span><b>${money(reste(c))}</b></div>
+ ${last.note?`<hr><div>${esc(last.note)}</div>`:""}<hr><p style="text-align:center">Merci pour votre paiement.</p></div>`;
+ let w=window.open("","_blank");w.document.write(document.getElementById("printArea").innerHTML);w.document.close();w.focus();setTimeout(()=>w.print(),300);
+}
+function exporter(){
+ let blob=new Blob([JSON.stringify({version:1,date:new Date().toISOString(),clients},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sauvegarde-ma-caisse.json";a.click();URL.revokeObjectURL(a.href);
+}
+function importer(e){
+ let file=e.target.files[0];if(!file)return;let r=new FileReader();r.onload=()=>{try{let d=JSON.parse(r.result);if(!Array.isArray(d.clients))throw 0;if(confirm("Remplacer les données actuelles par cette sauvegarde ?")){clients=d.clients;save();afficher();alert("Importation réussie.");}}catch(_){alert("Fichier de sauvegarde invalide.");}e.target.value=""};r.readAsText(file);
+}
+afficher();
+</script>
+</body>
+</html>
