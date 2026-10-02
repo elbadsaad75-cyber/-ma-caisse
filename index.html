@@ -52,11 +52,7 @@ footer{text-align:center;color:#777;padding:12px;font-size:12px}
   </div>
   <div id="syncLoggedIn" class="hidden">
     <div class="notice" id="syncStatus">Connecté.</div>
-    <div class="actions">
-      <button class="green" onclick="importerVersSupabase()">⬆ Envoyer les données de cet appareil</button>
-      <button class="secondary" onclick="chargerDepuisSupabase()">⬇ Charger depuis Supabase</button>
-      <button class="light" onclick="deconnecterSupabase()">Déconnexion</button>
-    </div>
+    <button class="light" onclick="deconnecterSupabase()">Déconnexion</button>
   </div>
   <div id="syncMsg" class="muted" style="margin-top:8px"></div>
 </div>
@@ -96,7 +92,7 @@ footer{text-align:center;color:#777;padding:12px;font-size:12px}
 <tbody id="liste"></tbody></table>
 </div>
 </div>
-<footer class="no-print">Les données peuvent être sauvegardées sur cet appareil et synchronisées avec Supabase. Fais régulièrement un export.</footer>
+<footer class="no-print">Les données sont sauvegardées automatiquement sur Supabase. Elles ne sont pas conservées sur cet appareil.</footer>
 </main>
 
 <div id="modal" class="modal hidden no-print"><div class="modalbox" id="modalContent"></div></div>
@@ -125,10 +121,27 @@ function setSyncLoggedIn(on){
   document.getElementById("appMain").classList.toggle("hidden",!on);
   if(!on){
     clients=[];
+    localStorage.removeItem(KEY);
     afficher();
     closeModal();
   }
 }
+
+let autoSyncTimer=null;
+let autoSyncBusy=false;
+let loadingFromSupabase=false;
+
+function clearLocalData(){
+  try{ localStorage.removeItem(KEY); }catch(e){}
+}
+
+function scheduleAutoSync(){
+  clearLocalData();
+  if(!supabaseClient||!syncUser||loadingFromSupabase)return;
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer=setTimeout(()=>syncToSupabase(),350);
+}
+
 async function connectSupabase(){
   try{
     const email=document.getElementById("syncEmail").value.trim();
@@ -139,18 +152,21 @@ async function connectSupabase(){
     if(error) throw error;
     syncUser=data.user;
     setSyncLoggedIn(true);
-    syncStatus("Connecté : "+(syncUser.email||""));
-    syncMessage("Connexion réussie. Tes données locales sont toujours conservées.");
-    await chargerDepuisSupabase(false);
+    syncStatus("Connexion réussie.");
+    await chargerDepuisSupabase();
   }catch(e){syncMessage("Connexion impossible : "+(e.message||e),true);}
 }
+
 async function deconnecterSupabase(){
   if(supabaseClient) await supabaseClient.auth.signOut();
   syncUser=null;
+  clearTimeout(autoSyncTimer);
+  clearLocalData();
   setSyncLoggedIn(false);
   syncStatus("Déconnecté. Les données sont masquées.");
   syncMessage("");
 }
+
 function localDateForDb(v){
   if(!v) return new Date().toISOString().slice(0,10);
   const s=String(v);
@@ -158,48 +174,51 @@ function localDateForDb(v){
   const d=new Date(s);
   return isNaN(d)?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10);
 }
-async function importerVersSupabase(){
-  if(!supabaseClient||!syncUser){syncMessage("Connecte-toi d'abord.",true);return;}
-  if(!clients.length){syncMessage("Aucune donnée locale à envoyer.",true);return;}
-  if(!confirm("Envoyer les clients et paiements de CET appareil vers Supabase ? Les données Supabase existantes de ce compte seront remplacées.")) return;
+
+async function syncToSupabase(){
+  if(autoSyncBusy||!supabaseClient||!syncUser||loadingFromSupabase)return;
+  autoSyncBusy=true;
   try{
-    syncStatus("Envoi des données...");
+    syncStatus("Sauvegarde automatique...");
     const {error:delP}=await supabaseClient.from("paiements").delete().eq("user_id",syncUser.id);
     if(delP) throw delP;
     const {error:delC}=await supabaseClient.from("clients").delete().eq("user_id",syncUser.id);
     if(delC) throw delC;
 
-    const clientRows=clients.map(c=>({
-      id:Number(c.id), user_id:syncUser.id, nom:c.nom||"", tel:c.tel||"",
-      adresse:c.adresse||"", credit_initial:Number(c.credit||0)
-    }));
-    const {error:insC}=await supabaseClient.from("clients").insert(clientRows);
-    if(insC) throw insC;
+    if(clients.length){
+      const clientRows=clients.map(c=>({
+        id:Number(c.id), user_id:syncUser.id, nom:c.nom||"", tel:c.tel||"",
+        adresse:c.adresse||"", credit_initial:Number(c.credit||0)
+      }));
+      const {error:insC}=await supabaseClient.from("clients").insert(clientRows);
+      if(insC) throw insC;
 
-    const paymentRows=[];
-    clients.forEach(c=>(c.paiements||[]).forEach(p=>{
-      paymentRows.push({
-        id:Number(p.id), user_id:syncUser.id, client_id:Number(c.id),
-        montant:Number(p.montant||0), date_paiement:localDateForDb(p.date),
-        note:p.note||""
-      });
-    }));
-    if(paymentRows.length){
-      const {error:insP}=await supabaseClient.from("paiements").insert(paymentRows);
-      if(insP) throw insP;
+      const paymentRows=[];
+      clients.forEach(c=>(c.paiements||[]).forEach(p=>{
+        paymentRows.push({
+          id:Number(p.id), user_id:syncUser.id, client_id:Number(c.id),
+          montant:Number(p.montant||0), date_paiement:localDateForDb(p.date), note:p.note||""
+        });
+      }));
+      if(paymentRows.length){
+        const {error:insP}=await supabaseClient.from("paiements").insert(paymentRows);
+        if(insP) throw insP;
+      }
     }
-    syncStatus("Synchronisé avec Supabase.");
-    syncMessage("✅ Données envoyées avec succès. Elles sont maintenant disponibles sur les autres appareils.");
+    clearLocalData();
+    syncStatus("Sauvegardé automatiquement sur Supabase.");
+    syncMessage("✅ Données enregistrées automatiquement.");
   }catch(e){
-    syncStatus("Erreur de synchronisation.");
+    syncStatus("Erreur de sauvegarde.");
     syncMessage("Erreur : "+(e.message||e),true);
-  }
+  }finally{autoSyncBusy=false;}
 }
-async function chargerDepuisSupabase(ask=true){
-  if(!supabaseClient||!syncUser){return;}
+
+async function chargerDepuisSupabase(){
+  if(!supabaseClient||!syncUser)return;
   try{
-    if(ask && clients.length && !confirm("Charger les données Supabase et remplacer celles affichées sur cet appareil ?")) return;
-    syncStatus("Chargement...");
+    loadingFromSupabase=true;
+    syncStatus("Chargement automatique...");
     const {data:cs,error:ec}=await supabaseClient.from("clients").select("*").order("created_at",{ascending:true});
     if(ec) throw ec;
     const {data:ps,error:ep}=await supabaseClient.from("paiements").select("*").order("date_paiement",{ascending:true});
@@ -215,39 +234,38 @@ async function chargerDepuisSupabase(ask=true){
       if(!c)return;
       const montant=Number(p.montant||0);
       c.paye+=montant;
-      c.paiements.push({
-        id:Number(p.id),
-        date:p.date_paiement||"",
-        montant,
-        note:p.note||""
-      });
+      c.paiements.push({id:Number(p.id),date:p.date_paiement||"",montant,note:p.note||""});
     });
     clients=Object.values(byId);
-    save(); afficher();
-    syncStatus("Synchronisé avec Supabase.");
-    syncMessage("✅ Données chargées : "+clients.length+" client(s).");
+    clearLocalData();
+    afficher();
+    syncStatus("Données chargées automatiquement depuis Supabase.");
+    syncMessage("✅ "+clients.length+" client(s) chargé(s). Aucune donnée conservée dans Ma Caisse.");
   }catch(e){
     syncStatus("Erreur de chargement.");
     syncMessage("Erreur : "+(e.message||e),true);
-  }
+  }finally{loadingFromSupabase=false;}
 }
+
 async function initSupabase(){
   try{
     supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
     const {data}=await supabaseClient.auth.getSession();
-    if(data && data.session){
-      syncUser=data.session.user; setSyncLoggedIn(true);
-      syncStatus("Connecté : "+(syncUser.email||""));
+    if(data&&data.session){
+      syncUser=data.session.user;
+      setSyncLoggedIn(true);
+      await chargerDepuisSupabase();
     }else{
       setSyncLoggedIn(false);
       syncStatus("Déconnecté. Les données sont masquées.");
     }
-  }catch(e){}
+  }catch(e){syncMessage("Erreur de connexion : "+(e.message||e),true);}
 }
+
 initSupabase();
 
 
-function save(){localStorage.setItem(KEY,JSON.stringify(clients));}
+function save(){clearLocalData(); scheduleAutoSync();}
 function money(n){return Number(n||0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" DH"}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function reste(c){return Math.max(0,Number(c.credit)-Number(c.paye))}
