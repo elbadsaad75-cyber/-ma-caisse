@@ -61,7 +61,7 @@ footer{text-align:center;color:#777;padding:12px;font-size:12px}
   <div id="syncMsg" class="muted" style="margin-top:8px"></div>
 </div>
 
-<main>
+<main id="appMain" class="hidden">
 <div class="card no-print">
 <div class="stats">
 <div class="stat">Clients<b id="sClients">0</b></div>
@@ -122,6 +122,12 @@ function syncStatus(s){
 function setSyncLoggedIn(on){
   document.getElementById("syncLoggedOut").classList.toggle("hidden",on);
   document.getElementById("syncLoggedIn").classList.toggle("hidden",!on);
+  document.getElementById("appMain").classList.toggle("hidden",!on);
+  if(!on){
+    clients=[];
+    afficher();
+    closeModal();
+  }
 }
 async function connectSupabase(){
   try{
@@ -140,7 +146,10 @@ async function connectSupabase(){
 }
 async function deconnecterSupabase(){
   if(supabaseClient) await supabaseClient.auth.signOut();
-  syncUser=null; setSyncLoggedIn(false); syncStatus("Déconnecté."); syncMessage("");
+  syncUser=null;
+  setSyncLoggedIn(false);
+  syncStatus("Déconnecté. Les données sont masquées.");
+  syncMessage("");
 }
 function localDateForDb(v){
   if(!v) return new Date().toISOString().slice(0,10);
@@ -229,6 +238,9 @@ async function initSupabase(){
     if(data && data.session){
       syncUser=data.session.user; setSyncLoggedIn(true);
       syncStatus("Connecté : "+(syncUser.email||""));
+    }else{
+      setSyncLoggedIn(false);
+      syncStatus("Déconnecté. Les données sont masquées.");
     }
   }catch(e){}
 }
