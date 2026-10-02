@@ -52,7 +52,11 @@ footer{text-align:center;color:#777;padding:12px;font-size:12px}
   </div>
   <div id="syncLoggedIn" class="hidden">
     <div class="notice" id="syncStatus">Connecté.</div>
-    <button class="light" onclick="deconnecterSupabase()">Déconnexion</button>
+    <div class="actions">
+      <button class="green" onclick="importerVersSupabase()">⬆ Envoyer les données de cet appareil</button>
+      <button class="secondary" onclick="chargerDepuisSupabase()">⬇ Charger depuis Supabase</button>
+      <button class="light" onclick="deconnecterSupabase()">Déconnexion</button>
+    </div>
   </div>
   <div id="syncMsg" class="muted" style="margin-top:8px"></div>
 </div>
@@ -92,7 +96,7 @@ footer{text-align:center;color:#777;padding:12px;font-size:12px}
 <tbody id="liste"></tbody></table>
 </div>
 </div>
-<footer class="no-print">Les données sont synchronisées automatiquement avec Supabase. Un export reste disponible comme sauvegarde supplémentaire.</footer>
+<footer class="no-print">Les données peuvent être sauvegardées sur cet appareil et synchronisées avec Supabase. Fais régulièrement un export.</footer>
 </main>
 
 <div id="modal" class="modal hidden no-print"><div class="modalbox" id="modalContent"></div></div>
@@ -125,7 +129,6 @@ function setSyncLoggedIn(on){
     closeModal();
   }
 }
-
 async function connectSupabase(){
   try{
     const email=document.getElementById("syncEmail").value.trim();
@@ -136,14 +139,11 @@ async function connectSupabase(){
     if(error) throw error;
     syncUser=data.user;
     setSyncLoggedIn(true);
-    syncStatus("Connexion réussie. Synchronisation automatique...");
-    syncMessage("");
+    syncStatus("Connecté : "+(syncUser.email||""));
+    syncMessage("Connexion réussie. Tes données locales sont toujours conservées.");
     await chargerDepuisSupabase(false);
-  }catch(e){
-    syncMessage("Connexion impossible : "+(e.message||e),true);
-  }
+  }catch(e){syncMessage("Connexion impossible : "+(e.message||e),true);}
 }
-
 async function deconnecterSupabase(){
   if(supabaseClient) await supabaseClient.auth.signOut();
   syncUser=null;
@@ -151,7 +151,6 @@ async function deconnecterSupabase(){
   syncStatus("Déconnecté. Les données sont masquées.");
   syncMessage("");
 }
-
 function localDateForDb(v){
   if(!v) return new Date().toISOString().slice(0,10);
   const s=String(v);
@@ -159,70 +158,52 @@ function localDateForDb(v){
   const d=new Date(s);
   return isNaN(d)?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10);
 }
-
-let syncInProgress=false;
-
-async function syncToSupabase(){
-  if(!supabaseClient||!syncUser) return true;
-  if(syncInProgress) return false;
-  syncInProgress=true;
+async function importerVersSupabase(){
+  if(!supabaseClient||!syncUser){syncMessage("Connecte-toi d'abord.",true);return;}
+  if(!clients.length){syncMessage("Aucune donnée locale à envoyer.",true);return;}
+  if(!confirm("Envoyer les clients et paiements de CET appareil vers Supabase ? Les données Supabase existantes de ce compte seront remplacées.")) return;
   try{
-    syncStatus("Synchronisation automatique...");
+    syncStatus("Envoi des données...");
     const {error:delP}=await supabaseClient.from("paiements").delete().eq("user_id",syncUser.id);
     if(delP) throw delP;
     const {error:delC}=await supabaseClient.from("clients").delete().eq("user_id",syncUser.id);
     if(delC) throw delC;
 
-    if(clients.length){
-      const clientRows=clients.map(c=>({
-        id:Number(c.id), user_id:syncUser.id, nom:c.nom||"", tel:c.tel||"",
-        adresse:c.adresse||"", credit_initial:Number(c.credit||0)
-      }));
-      const {error:insC}=await supabaseClient.from("clients").insert(clientRows);
-      if(insC) throw insC;
+    const clientRows=clients.map(c=>({
+      id:Number(c.id), user_id:syncUser.id, nom:c.nom||"", tel:c.tel||"",
+      adresse:c.adresse||"", credit_initial:Number(c.credit||0)
+    }));
+    const {error:insC}=await supabaseClient.from("clients").insert(clientRows);
+    if(insC) throw insC;
 
-      const paymentRows=[];
-      clients.forEach(c=>(c.paiements||[]).forEach(p=>{
-        paymentRows.push({
-          id:Number(p.id), user_id:syncUser.id, client_id:Number(c.id),
-          montant:Number(p.montant||0), date_paiement:localDateForDb(p.date),
-          note:p.note||""
-        });
-      }));
-      if(paymentRows.length){
-        const {error:insP}=await supabaseClient.from("paiements").insert(paymentRows);
-        if(insP) throw insP;
-      }
+    const paymentRows=[];
+    clients.forEach(c=>(c.paiements||[]).forEach(p=>{
+      paymentRows.push({
+        id:Number(p.id), user_id:syncUser.id, client_id:Number(c.id),
+        montant:Number(p.montant||0), date_paiement:localDateForDb(p.date),
+        note:p.note||""
+      });
+    }));
+    if(paymentRows.length){
+      const {error:insP}=await supabaseClient.from("paiements").insert(paymentRows);
+      if(insP) throw insP;
     }
-    syncStatus("☁️ Synchronisé automatiquement");
-    syncMessage("");
-    return true;
+    syncStatus("Synchronisé avec Supabase.");
+    syncMessage("✅ Données envoyées avec succès. Elles sont maintenant disponibles sur les autres appareils.");
   }catch(e){
-    syncStatus("Erreur de synchronisation");
+    syncStatus("Erreur de synchronisation.");
     syncMessage("Erreur : "+(e.message||e),true);
-    return false;
-  }finally{
-    syncInProgress=false;
   }
 }
-
-async function chargerDepuisSupabase(ask=false){
-  if(!supabaseClient||!syncUser) return;
-  if(syncInProgress) return;
+async function chargerDepuisSupabase(ask=true){
+  if(!supabaseClient||!syncUser){return;}
   try{
-    syncStatus("Chargement automatique...");
+    if(ask && clients.length && !confirm("Charger les données Supabase et remplacer celles affichées sur cet appareil ?")) return;
+    syncStatus("Chargement...");
     const {data:cs,error:ec}=await supabaseClient.from("clients").select("*").order("created_at",{ascending:true});
     if(ec) throw ec;
     const {data:ps,error:ep}=await supabaseClient.from("paiements").select("*").order("date_paiement",{ascending:true});
     if(ep) throw ep;
-
-    // Si Supabase contient déjà des données, elles deviennent la source de vérité.
-    // Si le compte Supabase est vide mais que cet appareil possède des données,
-    // elles sont transférées automatiquement une seule fois, sans bouton "Envoyer".
-    if((cs||[]).length===0 && clients.length>0){
-      await syncToSupabase();
-      return;
-    }
 
     const byId={};
     (cs||[]).forEach(c=>byId[c.id]={
@@ -235,51 +216,36 @@ async function chargerDepuisSupabase(ask=false){
       const montant=Number(p.montant||0);
       c.paye+=montant;
       c.paiements.push({
-        id:Number(p.id),date:p.date_paiement||"",montant,note:p.note||""
+        id:Number(p.id),
+        date:p.date_paiement||"",
+        montant,
+        note:p.note||""
       });
     });
     clients=Object.values(byId);
-    save();
-    afficher();
-    syncStatus("☁️ Données à jour");
-    syncMessage("");
+    save(); afficher();
+    syncStatus("Synchronisé avec Supabase.");
+    syncMessage("✅ Données chargées : "+clients.length+" client(s).");
   }catch(e){
-    syncStatus("Erreur de chargement");
+    syncStatus("Erreur de chargement.");
     syncMessage("Erreur : "+(e.message||e),true);
   }
 }
-
-async function autoSync(){
-  save();
-  afficher();
-  await syncToSupabase();
-}
-
 async function initSupabase(){
   try{
     supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
     const {data}=await supabaseClient.auth.getSession();
     if(data && data.session){
-      syncUser=data.session.user;
-      setSyncLoggedIn(true);
-      syncStatus("Connexion automatique...");
-      await chargerDepuisSupabase(false);
+      syncUser=data.session.user; setSyncLoggedIn(true);
+      syncStatus("Connecté : "+(syncUser.email||""));
     }else{
       setSyncLoggedIn(false);
       syncStatus("Déconnecté. Les données sont masquées.");
     }
-  }catch(e){
-    setSyncLoggedIn(false);
-    syncMessage("Connexion Supabase impossible.",true);
-  }
+  }catch(e){}
 }
 initSupabase();
 
-// Vérification automatique périodique : si l'autre appareil modifie les données,
-// elles apparaissent ici sans appuyer sur "Charger".
-setInterval(async()=>{
-  if(syncUser && !syncInProgress) await chargerDepuisSupabase(false);
-},10000);
 
 function save(){localStorage.setItem(KEY,JSON.stringify(clients));}
 function money(n){return Number(n||0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" DH"}
@@ -311,12 +277,11 @@ function crediter(id){
   <input id="creditMontant" type="number" min="0.01" step="0.01" placeholder="Montant du crédit (DH)" style="width:100%;margin-bottom:10px">
   <div class="actions"><button class="green" onclick="confirmerCredit(${id})">Ajouter</button><button class="secondary" onclick="closeModal()">Annuler</button></div>`);
 }
-async function confirmerCredit(id){
+function confirmerCredit(id){
   let c=clients.find(x=>x.id===id),m=Number(document.getElementById("creditMontant").value||0);
   if(m<=0){alert("Montant invalide.");return}
   c.credit+=m;
-  closeModal();
-  await autoSync();
+  save();closeModal();afficher();
 }
 function paiement(id){
  let c=clients.find(x=>x.id===id);if(!c)return;
@@ -348,13 +313,7 @@ function confirmerModification(id){
  c.nom=document.getElementById("mNom").value.trim();c.tel=document.getElementById("mTel").value.trim();c.adresse=document.getElementById("mAdr").value.trim();c.credit=credit;
  if(!c.nom){alert("Le nom est obligatoire.");return}save();closeModal();afficher();
 }
-async function supprimer(id){
-  let c=clients.find(x=>x.id===id);
-  if(confirm("Supprimer définitivement "+c.nom+" et son historique ?")){
-    clients=clients.filter(x=>x.id!==id);
-    await autoSync();
-  }
-}
+function supprimer(id){let c=clients.find(x=>x.id===id);if(confirm("Supprimer définitivement "+c.nom+" et son historique ?")){clients=clients.filter(x=>x.id!==id);save();afficher();}}
 function recu(id){
  let c=clients.find(x=>x.id===id),last=c.paiements[c.paiements.length-1];
  if(!last){alert("Aucun paiement à imprimer.");return}
@@ -367,8 +326,8 @@ function recu(id){
 function exporter(){
  let blob=new Blob([JSON.stringify({version:1,date:new Date().toISOString(),clients},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sauvegarde-ma-caisse.json";a.click();URL.revokeObjectURL(a.href);
 }
-async function importer(e){
- let file=e.target.files[0];if(!file)return;let r=new FileReader();r.onload=()=>{try{let d=JSON.parse(r.result);if(!Array.isArray(d.clients))throw 0;if(confirm("Remplacer les données actuelles par cette sauvegarde ?")){clients=d.clients;save();afficher();await autoSync();alert("Importation réussie.");}}catch(_){alert("Fichier de sauvegarde invalide.");}e.target.value=""};r.readAsText(file);
+function importer(e){
+ let file=e.target.files[0];if(!file)return;let r=new FileReader();r.onload=()=>{try{let d=JSON.parse(r.result);if(!Array.isArray(d.clients))throw 0;if(confirm("Remplacer les données actuelles par cette sauvegarde ?")){clients=d.clients;save();afficher();alert("Importation réussie.");}}catch(_){alert("Fichier de sauvegarde invalide.");}e.target.value=""};r.readAsText(file);
 }
 afficher();
 </script>
